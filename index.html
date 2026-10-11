@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Polaroid A4 Print Sheet</title>
+<style>
+:root{--bg:#f4f1ec;--panel:#fff;--ink:#1f1d1a;--mute:#6f6a62;--line:#ddd6ca;--accent:#d9482b;--accent-ink:#fff;--slot:#ebe7df;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1a18;--panel:#262421;--ink:#f1ede6;--mute:#a39c90;--line:#3a3732;--accent:#ee6a4d;--accent-ink:#1b1a18;--slot:#34312c}}
+:root[data-theme="dark"]{--bg:#1b1a18;--panel:#262421;--ink:#f1ede6;--mute:#a39c90;--line:#3a3732;--accent:#ee6a4d;--accent-ink:#1b1a18;--slot:#34312c}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{padding:18px 20px 6px;max-width:1100px;margin:auto}
+h1{margin:0;font:700 22px/1.2 Georgia,"Times New Roman",serif;letter-spacing:-.2px}
+header p{margin:4px 0 0;color:var(--mute);font-size:13.5px}
+main{max-width:1100px;margin:auto;padding:12px 20px 40px;display:grid;grid-template-columns:300px minmax(0,1fr);gap:20px;align-items:start}
+@media(max-width:820px){main{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px}
+label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--mute);font-weight:600}
+select,input[type=number]{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.chk{flex-direction:row;align-items:center;gap:8px;color:var(--ink);font-weight:500;font-size:14px}
+.info{background:var(--bg);border-radius:8px;padding:10px;font-size:13.5px}
+.info b{font-size:20px;font-family:Georgia,serif}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:10px 12px;font-weight:600}
+button.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button:disabled{opacity:.55;cursor:wait}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}.btns .wide{grid-column:1/-1}
+.note{font-size:12px;color:var(--mute)}
+.stage{overflow:auto}
+.page{position:relative;width:100%;max-width:600px;margin:0 auto;aspect-ratio:210/297;background:#fff;box-shadow:0 6px 28px rgba(0,0,0,.22);border-radius:2px}
+.slot{position:absolute;cursor:pointer}
+.slot canvas{width:100%;height:100%;display:block}
+.slot .tag{position:absolute;top:3px;right:3px;background:rgba(0,0,0,.65);color:#fff;font-size:11px;border-radius:5px;padding:1px 5px;pointer-events:none}
+.slot:hover{outline:2px solid var(--accent);outline-offset:-1px}
+.glabel{font-size:12.5px;color:var(--mute);font-weight:600;margin-bottom:-6px}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}.seg button{padding:8px 6px;font-size:13px}
+.seg button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;z-index:10}
+.modal.on{display:flex}
+.card{background:var(--panel);border-radius:14px;padding:16px;max-width:560px;width:100%;max-height:100%;overflow:auto;display:flex;flex-direction:column;gap:10px;align-items:center}
+.card canvas{touch-action:none;cursor:grab;background:#000;border-radius:4px;max-width:100%}
+.card input[type=range]{width:100%}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:#222;color:#fff;padding:9px 14px;border-radius:9px;font-size:13.5px;display:none;z-index:20;max-width:90%}
+#printWrap{display:none}
+@media print{
+ @page{size:A4;margin:0}
+ body>*:not(#printWrap){display:none!important}
+ #printWrap{display:block}
+ #printWrap img{width:210mm;height:297mm;display:block}
+}
+</style>
+</head>
+<body>
+<header>
+ <h1>Polaroid A4 Print Sheet</h1>
+ <p>Pick a Polaroid size, tap each frame to add a photo, crop it, then download PDF / PNG.</p>
+</header>
+<main>
+ <section class="panel">
+  <label>Polaroid size <select id="size"></select></label>
+  <div class="row">
+   <label>Layout <select id="orient"><option value="auto">Auto (max fit)</option><option value="portrait">Upright</option><option value="landscape">Rotated 90°</option></select></label>
+   <label>Frame <select id="frame"><option value="#ffffff">White</option><option value="#f6f1e4">Cream</option><option value="#161616">Black</option></select></label>
+  </div>
+  <div class="row">
+   <label>Page margin (mm) <input id="margin" type="number" min="0" max="30" step="0.5" value="8"></label>
+   <label>Gap (mm) <input id="gap" type="number" min="0" max="20" step="0.5" value="2"></label>
+  </div>
+  <label>Export quality <select id="dpi"><option value="300">300 DPI (standard print)</option><option value="450">450 DPI</option><option value="600">600 DPI (max, big file)</option></select></label>
+  <div class="glabel">Cutting guides</div>
+  <div class="seg" id="seg"><button data-g="off">Off</button><button data-g="outline">Card outline</button><button data-g="marks">Corner marks</button><button data-g="ticks">Page-edge ticks</button></div>
+  <div class="info" id="info"></div>
+  <div class="btns">
+   <button class="wide" id="bulk">+ Add many photos at once</button>
+   <button class="pri" id="pdf">Download PDF</button>
+   <button class="pri" id="png">Download PNG</button>
+   <button class="wide" id="print">Print</button>
+  </div>
+  <p class="note">Sizes are approximate film dimensions in mm. Print at 100% / "Actual size" (no fit-to-page). Empty frames are not printed. Corner marks use the gap between frames, so keep gap at 2 mm or more. Changing size keeps your photos and crop positions.</p>
+ </section>
+ <section class="stage"><div class="page" id="page"></div></section>
+</main>
+
+<div class="modal" id="modal">
+ <div class="card">
+  <strong>Crop photo</strong>
+  <canvas id="cv"></canvas>
+  <input id="zoom" type="range" min="1" max="6" step="0.01" value="1">
+  <div class="note" id="dpiNote"></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+   <button id="chg">Change photo</button><button id="rem">Remove</button><button id="cancel">Cancel</button><button class="pri" id="done">Done</button>
+  </div>
+  <div class="note">Drag to move · slider or mouse wheel to zoom</div>
+ </div>
+</div>
+<input type="file" id="file" accept="image/*" hidden>
+<input type="file" id="files" accept="image/*" multiple hidden>
+<div class="toast" id="toast"></div>
+<div id="printWrap"><img id="printImg" alt=""></div>
+
+<script>
+// name, card w/h, image area iw/ih, side border, top border (all mm)
+const SIZES=[
+ {n:'Polaroid Classic / 600 / i-Type (88×107)',w:88,h:107,iw:79,ih:79,side:4.5,top:6},
+ {n:'Polaroid Go (66×84)',w:66,h:84,iw:47,ih:46,side:9.5,top:8},
+ {n:'Polaroid Spectra / Image (108×89)',w:108,h:89,iw:92,ih:73,side:8,top:7},
+ {n:'Instax Mini / Mini Polaroid (54×86)',w:54,h:86,iw:46,ih:62,side:4,top:5},
+ {n:'Instax Square (72×86)',w:72,h:86,iw:62,ih:62,side:5,top:5},
+ {n:'Instax Wide (108×86)',w:108,h:86,iw:99,ih:62,side:4.5,top:5}
+];
+const A4={w:210,h:297};
+const st={size:0,orient:'auto',margin:8,gap:2,dpi:300,frame:'#ffffff',guides:'outline',slots:[]};
+const $=id=>document.getElementById(id);
+let L=null, pickIndex=-1;
+
+SIZES.forEach((s,i)=>{const o=document.createElement('option');o.value=i;o.textContent=s.n;$('size').appendChild(o)});
+
+function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>t.style.display='none',3500)}
+
+function calcLayout(){
+ const S=SIZES[st.size],m=st.margin,g=st.gap;let best=null;
+ const modes=st.orient==='auto'?[false,true]:[st.orient==='landscape'];
+ for(const rot of modes){
+  const cw=rot?S.h:S.w,ch=rot?S.w:S.h;
+  const cols=Math.max(0,Math.floor((A4.w-2*m+g)/(cw+g))),rows=Math.max(0,Math.floor((A4.h-2*m+g)/(ch+g)));
+  const n=cols*rows;
+  if(!best||n>best.n)best={rot,cw,ch,cols,rows,n};
+ }
+ best.x0=(A4.w-(best.cols*best.cw+(best.cols-1)*g))/2;
+ best.y0=(A4.h-(best.rows*best.ch+(best.rows-1)*g))/2;
+ return best;
+}
+
+function cropRect(s,aspect){
+ let sw,sh;
+ if(s.nw/s.nh>aspect){sh=s.nh;sw=sh*aspect}else{sw=s.nw;sh=sw/aspect}
+ sw/=s.z;sh/=s.z;
+ let sx=s.fx*s.nw-sw/2,sy=s.fy*s.nh-sh/2;
+ sx=Math.min(Math.max(0,sx),s.nw-sw);sy=Math.min(Math.max(0,sy),s.nh-sh);
+ return {sx,sy,sw,sh};
+}
+function clampSlot(s,aspect){const r=cropRect(s,aspect);s.fx=(r.sx+r.sw/2)/s.nw;s.fy=(r.sy+r.sh/2)/s.nh;return r}
+
+// draw one card into ctx at (0,0) of its cell, ppm = pixels per mm
+function drawCard(ctx,slot,ppm,rot,preview){
+ const S=SIZES[st.size];
+ ctx.save();
+ if(rot){ctx.translate(S.h*ppm,0);ctx.rotate(Math.PI/2)}
+ ctx.fillStyle=st.frame;ctx.fillRect(0,0,S.w*ppm,S.h*ppm);
+ const ix=S.side*ppm,iy=S.top*ppm,iw=S.iw*ppm,ih=S.ih*ppm;
+ if(slot){
+  const r=cropRect(slot,S.iw/S.ih);
+  ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+  ctx.drawImage(slot.img,r.sx,r.sy,r.sw,r.sh,ix,iy,iw,ih);
+ }else if(preview){
+  const dark=matchMedia('(prefers-color-scheme:dark)').matches&&document.documentElement.dataset.theme!=='light';
+  ctx.fillStyle=dark?'#34312c':'#ebe7df';ctx.fillRect(ix,iy,iw,ih);
+  ctx.fillStyle='#8a8478';ctx.font=Math.max(10,ppm*3.6)+'px system-ui,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText('+ Add photo',ix+iw/2,iy+ih/2);
+ }
+ if(st.guides==='outline'){ctx.strokeStyle='#bdb7ab';ctx.lineWidth=Math.max(1,ppm*0.15);ctx.strokeRect(ctx.lineWidth/2,ctx.lineWidth/2,S.w*ppm-ctx.lineWidth,S.h*ppm-ctx.lineWidth)}
+ ctx.restore();
+}
+
+// corner marks / page-edge ticks, drawn at page level (outside the photos)
+function drawGuides(ctx,ppm,exp){
+ const m=st.guides;if(m!=='marks'&&m!=='ticks')return;
+ ctx.save();ctx.strokeStyle='#444';ctx.lineWidth=Math.max(1,ppm*0.12);ctx.beginPath();
+ const g=st.gap,xs=[],ys=[];
+ for(let c=0;c<L.cols;c++){const x=L.x0+c*(L.cw+g);xs.push([x,x+L.cw])}
+ for(let r=0;r<L.rows;r++){const y=L.y0+r*(L.ch+g);ys.push([y,y+L.ch])}
+ if(m==='marks'){
+  const len=Math.min(3,Math.max(g,0.5));
+  for(let i=0;i<L.n;i++){
+   if(exp&&!st.slots[i])continue;
+   const [x1,x2]=xs[i%L.cols],[y1,y2]=ys[Math.floor(i/L.cols)];
+   for(const cx of [x1,x2])for(const cy of [y1,y2]){
+    const dx=cx===x1?-1:1,dy=cy===y1?-1:1;
+    ctx.moveTo(cx*ppm,cy*ppm);ctx.lineTo((cx+dx*len)*ppm,cy*ppm);
+    ctx.moveTo(cx*ppm,cy*ppm);ctx.lineTo(cx*ppm,(cy+dy*len)*ppm);
+   }
+  }
+ }else{
+  const top=L.y0-0.5,bot=L.y0+L.rows*L.ch+(L.rows-1)*g+0.5,left=L.x0-0.5,right=L.x0+L.cols*L.cw+(L.cols-1)*g+0.5;
+  const tl=Math.min(5,L.y0-1.5),sl=Math.min(5,L.x0-1.5);
+  for(const [a,b] of xs)for(const x of [a,b]){
+   if(tl>0){ctx.moveTo(x*ppm,top*ppm);ctx.lineTo(x*ppm,(top-tl)*ppm)}
+   if(tl>0&&A4.h-bot>1.5){ctx.moveTo(x*ppm,bot*ppm);ctx.lineTo(x*ppm,(bot+Math.min(5,A4.h-bot-1))*ppm)}
+  }
+  for(const [a,b] of ys)for(const y of [a,b]){
+   if(sl>0){ctx.moveTo(left*ppm,y*ppm);ctx.lineTo((left-sl)*ppm,y*ppm)}
+   if(sl>0&&A4.w-right>1.5){ctx.moveTo(right*ppm,y*ppm);ctx.lineTo((right+Math.min(5,A4.w-right-1))*ppm,y*ppm)}
+  }
+ }
+ ctx.stroke();ctx.restore();
+}
+function paintGuides(){
+ const page=$('page'),c=document.createElement('canvas');
+ c.width=1050;c.height=1485;c.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
+ page.appendChild(c);if(L.n)drawGuides(c.getContext('2d'),5,false);
+}
+function syncSeg(){document.querySelectorAll('#seg button').forEach(b=>b.classList.toggle('on',b.dataset.g===st.guides))}
+
+function paintSlot(i){
+ const c=document.querySelector('canvas[data-i="'+i+'"]');if(!c)return;
+ const ppm=6,ctx=c.getContext('2d');
+ ctx.clearRect(0,0,c.width,c.height);
+ drawCard(ctx,st.slots[i],ppm,L.rot,true);
+ const tag=c.parentNode.querySelector('.tag');if(tag)tag.style.display=st.slots[i]?'block':'none';
+}
+
+function render(){
+ L=calcLayout();
+ const page=$('page');page.innerHTML='';
+ for(let i=0;i<L.n;i++){
+  const col=i%L.cols,row=Math.floor(i/L.cols);
+  const x=L.x0+col*(L.cw+st.gap),y=L.y0+row*(L.ch+st.gap);
+  const d=document.createElement('div');d.className='slot';
+  d.style.cssText='left:'+(x/A4.w*100)+'%;top:'+(y/A4.h*100)+'%;width:'+(L.cw/A4.w*100)+'%;height:'+(L.ch/A4.h*100)+'%';
+  const c=document.createElement('canvas');c.width=Math.round(L.cw*6);c.height=Math.round(L.ch*6);c.dataset.i=i;
+  const t=document.createElement('span');t.className='tag';t.textContent='✂';t.style.display='none';
+  d.append(c,t);d.onclick=()=>slotClick(i);page.appendChild(d);paintSlot(i);
+ }
+ paintGuides();syncSeg();
+ const used=st.slots.slice(0,L.n).filter(Boolean).length;
+ $('info').innerHTML=L.n?'<b>'+L.n+'</b> per A4 page <span style="color:var(--mute)">('+L.cols+' × '+L.rows+(L.rot?', rotated':'')+')</span><br>'+used+' of '+L.n+' photos added':'Size too big for the current margins.';
+}
+
+function loadFile(f){
+ return new Promise((res,rej)=>{
+  const url=URL.createObjectURL(f),img=new Image();
+  img.onload=()=>res({img,nw:img.naturalWidth,nh:img.naturalHeight,fx:.5,fy:.5,z:1});
+  img.onerror=()=>rej(new Error('Could not read '+f.name));
+  img.src=url;
+ });
+}
+function slotClick(i){
+ if(st.slots[i]){openCrop(i)}else{pickIndex=i;$('file').value='';$('file').click()}
+}
+$('file').onchange=async e=>{
+ const f=e.target.files[0];if(!f||pickIndex<0)return;
+ try{st.slots[pickIndex]=await loadFile(f)}catch(err){toast(err.message);return}
+ const i=pickIndex;render();
+ if($('modal').classList.contains('on')){cr.slot=st.slots[i];cr.backup=null;drawCrop()}
+ else openCrop(i);
+};
+$('bulk').onclick=()=>{$('files').value='';$('files').click()};
+$('files').onchange=async e=>{
+ const fs=[...e.target.files];let k=0,skipped=0;
+ for(const f of fs){
+  while(k<L.n&&st.slots[k])k++;
+  if(k>=L.n){skipped++;continue}
+  try{st.slots[k]=await loadFile(f)}catch(err){toast(err.message)}
+ }
+ render();if(skipped)toast(skipped+' photo(s) did not fit on this page.');
+};
+
+// ---- cropper ----
+const cr={i:-1,slot:null,backup:null,aspect:1,VW:0,VH:0};
+function openCrop(i){
+ const S=SIZES[st.size];cr.i=i;cr.slot=st.slots[i];cr.aspect=S.iw/S.ih;
+ cr.backup={fx:cr.slot.fx,fy:cr.slot.fy,z:cr.slot.z};
+ const maxW=Math.min(500,innerWidth-70),maxH=Math.min(380,innerHeight-300);
+ let VW=maxW,VH=VW/cr.aspect;if(VH>maxH){VH=maxH;VW=VH*cr.aspect}
+ cr.VW=Math.round(VW);cr.VH=Math.round(VH);
+ const cv=$('cv'),dpr=Math.min(2,devicePixelRatio||1);
+ cv.width=Math.round(cr.VW*dpr);cv.height=Math.round(cr.VH*dpr);cv.style.width=cr.VW+'px';cv.style.height=cr.VH+'px';
+ $('zoom').value=cr.slot.z;$('modal').classList.add('on');drawCrop();
+}
+function drawCrop(){
+ const s=cr.slot,cv=$('cv'),ctx=cv.getContext('2d');
+ const r=clampSlot(s,cr.aspect);
+ ctx.imageSmoothingQuality='high';ctx.drawImage(s.img,r.sx,r.sy,r.sw,r.sh,0,0,cv.width,cv.height);
+ const dpi=Math.round(r.sw/(SIZES[st.size].iw/25.4));
+ const n=$('dpiNote');n.textContent='Photo '+s.nw+'×'+s.nh+' px · print resolution ≈ '+dpi+' DPI '+(dpi>=250?'(great)':dpi>=150?'(okay)':'(low — may look soft)');
+ n.style.color=dpi>=250?'':dpi>=150?'#b7791f':'#d9482b';
+}
+(()=>{
+ const cv=$('cv');let drag=null;
+ cv.onpointerdown=e=>{drag={x:e.clientX,y:e.clientY};cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing'};
+ cv.onpointermove=e=>{
+  if(!drag)return;const s=cr.slot,r=cropRect(s,cr.aspect);
+  s.fx-=((e.clientX-drag.x)*r.sw/cr.VW)/s.nw;s.fy-=((e.clientY-drag.y)*r.sh/cr.VH)/s.nh;
+  drag={x:e.clientX,y:e.clientY};drawCrop();
+ };
+ cv.onpointerup=cv.onpointercancel=()=>{drag=null;cv.style.cursor='grab'};
+ cv.onwheel=e=>{e.preventDefault();const z=Math.min(6,Math.max(1,cr.slot.z*(e.deltaY<0?1.08:1/1.08)));cr.slot.z=z;$('zoom').value=z;drawCrop()};
+ $('zoom').oninput=e=>{cr.slot.z=+e.target.value;drawCrop()};
+})();
+function closeCrop(){$('modal').classList.remove('on')}
+$('done').onclick=()=>{closeCrop();paintSlot(cr.i);render()};
+$('cancel').onclick=()=>{if(cr.backup&&st.slots[cr.i]===cr.slot)Object.assign(cr.slot,cr.backup);closeCrop();render()};
+$('rem').onclick=()=>{st.slots[cr.i]=undefined;closeCrop();render()};
+$('chg').onclick=()=>{pickIndex=cr.i;$('file').value='';$('file').click()};
+
+// ---- controls ----
+$('size').onchange=e=>{st.size=+e.target.value;render()};
+$('orient').onchange=e=>{st.orient=e.target.value;render()};
+$('frame').onchange=e=>{st.frame=e.target.value;render()};
+document.querySelectorAll('#seg button').forEach(b=>b.onclick=()=>{st.guides=b.dataset.g;render()});
+$('dpi').onchange=e=>{st.dpi=+e.target.value};
+$('margin').onchange=e=>{st.margin=Math.max(0,+e.target.value||0);render()};
+$('gap').onchange=e=>{st.gap=Math.max(0,+e.target.value||0);render()};
+
+// ---- export ----
+function renderPage(dpi){
+ const ppm=dpi/25.4,c=document.createElement('canvas');
+ c.width=Math.round(A4.w*ppm);c.height=Math.round(A4.h*ppm);
+ const ctx=c.getContext('2d');if(!ctx)throw new Error('canvas');
+ ctx.fillStyle='#fff';ctx.fillRect(0,0,c.width,c.height);
+ for(let i=0;i<L.n;i++){
+  if(!st.slots[i])continue;
+  const col=i%L.cols,row=Math.floor(i/L.cols);
+  ctx.save();ctx.translate((L.x0+col*(L.cw+st.gap))*ppm,(L.y0+row*(L.ch+st.gap))*ppm);
+  drawCard(ctx,st.slots[i],ppm,L.rot,false);ctx.restore();
+ }
+ drawGuides(ctx,ppm,true);
+ return c;
+}
+const toBlob=(c,type,q)=>new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('Image too large for this device — try 300 DPI')),type,q));
+
+function makePdf(jpeg,w,h){
+ const enc=new TextEncoder(),parts=[],offs=[];let len=0;
+ const push=d=>{const b=typeof d==='string'?enc.encode(d):d;parts.push(b);len+=b.length};
+ const obj=(n,body)=>{offs[n]=len;push(n+' 0 obj\n'+body+'\nendobj\n')};
+ push('%PDF-1.4\n');
+ obj(1,'<< /Type /Catalog /Pages 2 0 R >>');
+ obj(2,'<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
+ obj(3,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.276 841.89] /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R >>');
+ const cs='q 595.276 0 0 841.89 0 0 cm /Im0 Do Q';
+ obj(4,'<< /Length '+cs.length+' >>\nstream\n'+cs+'\nendstream');
+ offs[5]=len;
+ push('5 0 obj\n<< /Type /XObject /Subtype /Image /Width '+w+' /Height '+h+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+jpeg.length+' >>\nstream\n');
+ push(jpeg);push('\nendstream\nendobj\n');
+ const xref=len;let x='xref\n0 6\n0000000000 65535 f \n';
+ for(let i=1;i<=5;i++)x+=String(offs[i]).padStart(10,'0')+' 00000 n \n';
+ push(x+'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF');
+ return new Blob(parts,{type:'application/pdf'});
+}
+
+async function save(filename,blob){
+ let dl=null;try{dl=await claude.use('downloads')}catch(e){}
+ if(dl){
+  try{await dl.save({filename,data:blob});toast('Saved '+filename)}
+  catch(e){if(e&&e.code!=='declined')toast('Could not save: '+(e.message||e.code))}
+ }else{
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();a.remove();
+ }
+}
+function guard(b,fn){
+ return async()=>{
+  if(!st.slots.slice(0,L.n).some(Boolean)){toast('Add at least one photo first.');return}
+  const old=b.textContent;b.disabled=true;b.textContent='Working…';
+  try{await fn()}catch(e){toast(e.message||'Export failed')}
+  b.disabled=false;b.textContent=old;
+ };
+}
+$('png').onclick=guard($('png'),async()=>{
+ const c=renderPage(st.dpi);await save('polaroid-A4-'+st.dpi+'dpi.png',await toBlob(c,'image/png'));
+});
+$('pdf').onclick=guard($('pdf'),async()=>{
+ const c=renderPage(st.dpi),jb=await toBlob(c,'image/jpeg',0.97);
+ await save('polaroid-A4.pdf',makePdf(new Uint8Array(await jb.arrayBuffer()),c.width,c.height));
+});
+$('print').onclick=guard($('print'),async()=>{
+ const c=renderPage(Math.min(st.dpi,300)),b=await toBlob(c,'image/jpeg',0.95);
+ const img=$('printImg');await new Promise(r=>{img.onload=r;img.src=URL.createObjectURL(b)});
+ window.print();
+});
+
+render();
+</script>
+</body>
+</html>
