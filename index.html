@@ -51,6 +51,21 @@ button:disabled{opacity:.55;cursor:wait}
  #printWrap{display:block}
  #printWrap img{width:210mm;height:297mm;display:block}
 }
+
+/* ---- Custom mode (added) ---- */
+.cbox{display:flex;flex-direction:column;gap:10px;border:1.5px dashed var(--accent);border-radius:10px;padding:10px}
+.cbox[hidden]{display:none}
+.seg.three{grid-template-columns:repeat(3,1fr)}.seg.three button{padding:7px 2px;font-size:12px}
+#cEd{width:100%;height:auto;touch-action:none;user-select:none;-webkit-user-select:none;background:var(--bg);border-radius:8px;display:block}
+#cEd [data-h]{touch-action:none}
+.cgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cgrid input{width:100%;min-width:0}
+
+/* ---- Caption text (added) ---- */
+.capin{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;width:100%;resize:vertical}
+.emo{display:flex;flex-wrap:wrap;gap:4px}.emo button{padding:3px 6px;font-size:17px;line-height:1.2}
+.capbox{display:flex;flex-direction:column;gap:8px}
+.capbox input[type=range]{width:100%}
 </style>
 </head>
 <body>
@@ -61,6 +76,19 @@ button:disabled{opacity:.55;cursor:wait}
 <main>
  <section class="panel">
   <label>Polaroid size <select id="size"></select></label>
+  <div class="cbox" id="customBox" hidden>
+   <div class="row">
+    <label>Units <select id="cUnit"><option value="mm">mm</option><option value="cm">cm</option><option value="in">inch</option><option value="px">pixel</option><option value="pt">point (pt)</option></select></label>
+    <label id="cPpiWrap" style="display:none">Pixels per inch <input id="cPpi" type="number" min="30" max="1200" step="1" value="300"></label>
+   </div>
+   <svg id="cEd" viewBox="0 0 300 330" aria-label="Custom polaroid editor"></svg>
+   <div class="note"><b style="color:var(--accent)">●</b> Orange dots resize the card. <b style="color:#2b7de9">■</b> Blue squares change the white border (photo area). Drag with mouse or finger — or type exact values below.</div>
+   <div class="glabel">When I resize the card</div>
+   <div class="seg three" id="cMode"><button data-m="borders">Photo grows</button><button data-m="photo">White grows</button><button data-m="scale">Scale all</button></div>
+   <div class="cgrid" id="cFields"></div>
+   <label>Copy values from a preset <select id="cPre"><option value="">— choose —</option></select></label>
+   <button id="cReset">Reset custom size</button>
+  </div>
   <div class="row">
    <label>Layout <select id="orient"><option value="auto">Auto (max fit)</option><option value="portrait">Upright</option><option value="landscape">Rotated 90°</option></select></label>
    <label>Frame <select id="frame"><option value="#ffffff">White</option><option value="#f6f1e4">Cream</option><option value="#161616">Black</option></select></label>
@@ -72,6 +100,29 @@ button:disabled{opacity:.55;cursor:wait}
   <label>Export quality <select id="dpi"><option value="300">300 DPI (standard print)</option><option value="450">450 DPI</option><option value="600">600 DPI (max, big file)</option></select></label>
   <div class="glabel">Cutting guides</div>
   <div class="seg" id="seg"><button data-g="off">Off</button><button data-g="outline">Card outline</button><button data-g="marks">Corner marks</button><button data-g="ticks">Page-edge ticks</button></div>
+  <div class="capbox" id="capBox">
+   <div class="glabel">Text &amp; emoji in the white area</div>
+   <textarea class="capin" id="capText" rows="2" placeholder="Write text or emoji… (shown on every photo)"></textarea>
+   <div class="emo" id="capEmo"></div>
+   <div class="row">
+    <label>Font <select id="capFont"><option value="hand">Handwriting</option><option value="sans">Clean sans</option><option value="serif">Serif</option><option value="mono">Typewriter</option></select></label>
+    <label>Align <select id="capAlign"><option value="center">Center</option><option value="left">Left</option><option value="right">Right</option></select></label>
+   </div>
+   <div class="row">
+    <label>Vertical <select id="capV"><option value="middle">Middle</option><option value="top">Top</option><option value="bottom">Bottom</option></select></label>
+    <label>Inner padding (mm) <input id="capPad" type="number" min="0" max="20" step="0.5" value="1.5"></label>
+   </div>
+   <label>Max text size: <span id="capSizeV">5</span> mm <input id="capSize" type="range" min="1" max="20" step="0.5" value="5"></label>
+   <div class="row">
+    <label class="chk"><input type="checkbox" id="capBold"> Bold</label>
+    <label class="chk"><input type="checkbox" id="capItalic"> Italic</label>
+   </div>
+   <div class="row">
+    <label class="chk"><input type="checkbox" id="capAuto" checked> Auto color</label>
+    <label>Color <input type="color" id="capColor" value="#2a2723" style="width:100%;height:36px;border:1px solid var(--line);border-radius:8px;background:var(--bg)"></label>
+   </div>
+   <div class="note" id="capNote"></div>
+  </div>
   <div class="info" id="info"></div>
   <div class="btns">
    <button class="wide" id="bulk">+ Add many photos at once</button>
@@ -373,6 +424,325 @@ $('print').onclick=guard($('print'),async()=>{
 });
 
 render();
+</script>
+
+<script>
+// ===== Custom mode (added; nothing above is modified) =====
+(()=>{
+const MINC=10,MINP=5,MAXC=297,KEY='polaroidCustomV1';
+const C={w:88,h:107,side:4.5,top:6,bottom:22};
+let unit='mm',ppi=300,mode='borders';
+try{const j=JSON.parse(localStorage.getItem(KEY)||'null');if(j){Object.assign(C,j.C||{});unit=j.unit||unit;ppi=j.ppi||ppi;mode=j.mode||mode}}catch(e){}
+
+const CUSTOM={n:'★ Custom — your own size (fully adjustable)',custom:true,w:0,h:0,iw:0,ih:0,side:0,top:0};
+SIZES.push(CUSTOM);
+const IDX=SIZES.length-1;
+{const o=document.createElement('option');o.value=IDX;o.textContent=CUSTOM.n;$('size').appendChild(o)}
+SIZES.forEach((s,i)=>{if(!s.custom){const o=document.createElement('option');o.value=i;o.textContent=s.n;$('cPre').appendChild(o)}});
+
+const clamp=(v,a,b)=>Math.min(Math.max(v,a),Math.max(a,b));
+function norm(){
+ C.w=clamp(+C.w||MINC,MINC,MAXC);C.h=clamp(+C.h||MINC,MINC,MAXC);
+ C.side=clamp(+C.side||0,0,(C.w-MINP)/2);
+ const room=C.h-MINP;
+ C.top=clamp(+C.top||0,0,room);
+ C.bottom=clamp(+C.bottom||0,0,room-C.top);
+}
+function sync(){
+ norm();
+ CUSTOM.w=C.w;CUSTOM.h=C.h;CUSTOM.side=C.side;CUSTOM.top=C.top;
+ CUSTOM.iw=C.w-2*C.side;CUSTOM.ih=C.h-C.top-C.bottom;
+}
+function setCard(nw,nh){
+ nw=clamp(nw,MINC,MAXC);nh=clamp(nh,MINC,MAXC);
+ const iw=C.w-2*C.side,ih=C.h-C.top-C.bottom;
+ if(mode==='photo'){C.side=(nw-iw)/2;C.bottom=nh-C.top-ih}
+ else if(mode==='scale'){const kx=nw/C.w,ky=nh/C.h;C.side*=kx;C.top*=ky;C.bottom*=ky}
+ C.w=nw;C.h=nh;norm();
+}
+function setPhoto(iw,ih){
+ iw=clamp(iw,MINP,C.w);C.side=(C.w-iw)/2;
+ ih=clamp(ih,MINP,C.h-C.top);C.bottom=C.h-C.top-ih;norm();
+}
+
+// ---- units ----
+const MM={mm:1,cm:10,in:25.4,pt:25.4/72},DEC={mm:2,cm:3,in:3,pt:1,px:0},LBL={mm:'mm',cm:'cm',in:'in',pt:'pt',px:'px'};
+const f=()=>unit==='px'?25.4/ppi:MM[unit];
+const fmt=v=>String(+(v/f()).toFixed(DEC[unit]));
+
+// ---- fields ----
+const GET={w:()=>C.w,h:()=>C.h,iw:()=>C.w-2*C.side,ih:()=>C.h-C.top-C.bottom,side:()=>C.side,top:()=>C.top,bottom:()=>C.bottom};
+const SET={
+ w:v=>setCard(v,C.h),h:v=>setCard(C.w,v),
+ iw:v=>setPhoto(v,GET.ih()),ih:v=>setPhoto(GET.iw(),v),
+ side:v=>{C.side=v},top:v=>{C.top=v},bottom:v=>{C.bottom=v}
+};
+const FIELDS=[['w','Card width'],['h','Card height'],['iw','Photo width'],['ih','Photo height'],['side','White left & right'],['top','White top'],['bottom','White bottom']];
+FIELDS.forEach(([k,t])=>{
+ const l=document.createElement('label');l.textContent=t+' ';
+ const i=document.createElement('input');i.type='number';i.step='any';i.min='0';i.id='cf_'+k;
+ l.appendChild(i);$('cFields').appendChild(l);
+ i.addEventListener('input',()=>{
+  const v=parseFloat(i.value);if(!(v>=0))return;
+  SET[k](v*f());update(false,k);
+ });
+ i.addEventListener('change',()=>update(false));
+});
+function fillFields(skip){
+ FIELDS.forEach(([k])=>{if(k!==skip)$('cf_'+k).value=fmt(GET[k]())});
+}
+
+// ---- editor (SVG, pointer events = mouse + touch) ----
+const ed=$('cEd');let ES=1,OX=0,OY=0,drag=null;
+function refit(){const Mx=230,My=255;ES=Math.min(Mx/C.w,My/C.h)*0.82;OX=20+(Mx-C.w*ES)/2;OY=22+(My-C.h*ES)/2}
+function drawEd(){
+ const s=ES,x=OX,y=OY,w=C.w*s,h=C.h*s,ix=x+C.side*s,iy=y+C.top*s,iw=GET.iw()*s,ih=GET.ih()*s;
+ const dot=(id,cx,cy,cur)=>`<g data-h="${id}" style="cursor:${cur}"><circle cx="${cx}" cy="${cy}" r="16" fill="transparent"/><circle cx="${cx}" cy="${cy}" r="7" style="fill:var(--accent);stroke:#fff;stroke-width:2"/></g>`;
+ const sq=(id,cx,cy,cur)=>`<g data-h="${id}" style="cursor:${cur}"><circle cx="${cx}" cy="${cy}" r="16" fill="transparent"/><rect x="${cx-6}" y="${cy-6}" width="12" height="12" rx="3" style="fill:#2b7de9;stroke:#fff;stroke-width:2"/></g>`;
+ const my=iy+ih/2,mx=x+w/2;
+ let g=`<text x="20" y="13" font-size="11" style="fill:var(--mute)">Card ${fmt(C.w)} × ${fmt(C.h)} ${LBL[unit]}</text>`
+ +`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${st.frame}" style="stroke:#8a8478;stroke-width:1.2"/>`
+ +`<rect x="${ix}" y="${iy}" width="${iw}" height="${ih}" style="fill:#cfc8ba;stroke:#8a8478;stroke-dasharray:4 3"/>`;
+ if(iw>70&&ih>16)g+=`<text x="${ix+iw/2}" y="${iy+ih/2+4}" font-size="11" text-anchor="middle" style="fill:#5d574d">photo ${fmt(GET.iw())} × ${fmt(GET.ih())}</text>`;
+ g+=sq('pl',ix,my,'ew-resize')+sq('pr',ix+iw,my,'ew-resize')+sq('pt',mx,iy,'ns-resize')+sq('pb',mx,iy+ih,'ns-resize')
+ +dot('cw',x+w+16,y+h/2,'ew-resize')+dot('ch',x+w/2,y+h+16,'ns-resize')+dot('cwh',x+w+16,y+h+16,'nwse-resize');
+ ed.innerHTML=g;
+}
+ed.addEventListener('pointerdown',e=>{
+ const g=e.target.closest('[data-h]');if(!g)return;
+ e.preventDefault();try{ed.setPointerCapture(e.pointerId)}catch(_){}
+ drag={h:g.dataset.h,x:e.clientX,y:e.clientY,S:{...C}};
+});
+ed.addEventListener('pointermove',e=>{
+ if(!drag)return;
+ const k=ed.getBoundingClientRect().width/300*ES,dx=(e.clientX-drag.x)/k,dy=(e.clientY-drag.y)/k,S=drag.S;
+ const r=v=>Math.round(v*10)/10;
+ Object.assign(C,S);
+ switch(drag.h){
+  case 'cw':setCard(r(S.w+dx),S.h);break;
+  case 'ch':setCard(S.w,r(S.h+dy));break;
+  case 'cwh':setCard(r(S.w+dx),r(S.h+dy));break;
+  case 'pl':C.side=r(S.side+dx);break;
+  case 'pr':C.side=r(S.side-dx);break;
+  case 'pt':C.top=r(S.top+dy);break;
+  case 'pb':C.bottom=r(S.bottom-dy);break;
+ }
+ update(true);
+});
+const endDrag=()=>{if(drag){drag=null;update(false)}};
+ed.addEventListener('pointerup',endDrag);ed.addEventListener('pointercancel',endDrag);
+
+// ---- update pipeline ----
+let pend=false;
+function rr(){if(st.size!==IDX||pend)return;pend=true;requestAnimationFrame(()=>{pend=false;render()})}
+function update(dragging,skipField){
+ sync();rr();
+ if(!dragging&&!skipField)refit();
+ drawEd();fillFields(skipField);
+ try{localStorage.setItem(KEY,JSON.stringify({C,unit,ppi,mode}))}catch(e){}
+}
+
+// ---- other controls ----
+function syncUI(){
+ $('cUnit').value=unit;$('cPpi').value=ppi;$('cPpiWrap').style.display=unit==='px'?'':'none';
+ document.querySelectorAll('#cMode button').forEach(b=>b.classList.toggle('on',b.dataset.m===mode));
+}
+$('cUnit').onchange=e=>{unit=e.target.value;syncUI();update(false)};
+$('cPpi').onchange=e=>{ppi=clamp(+e.target.value||300,30,1200);syncUI();update(false)};
+document.querySelectorAll('#cMode button').forEach(b=>b.onclick=()=>{mode=b.dataset.m;syncUI();update(false)});
+$('cPre').onchange=e=>{
+ const p=SIZES[+e.target.value];if(!p)return;
+ Object.assign(C,{w:p.w,h:p.h,side:(p.w-p.iw)/2,top:p.top,bottom:p.h-p.top-p.ih});
+ e.target.value='';update(false);
+};
+$('cReset').onclick=()=>{Object.assign(C,{w:88,h:107,side:4.5,top:6,bottom:22});update(false)};
+$('size').addEventListener('change',()=>{
+ const on=st.size===IDX;$('customBox').hidden=!on;
+ if(on){refit();drawEd();fillFields()}
+});
+
+sync();syncUI();refit();drawEd();fillFields();
+})();
+</script>
+
+<script>
+// ===== Cut lines + corner marks guide (added) =====
+(()=>{
+ const orig=drawGuides;
+ drawGuides=function(ctx,ppm,exp){
+  if(st.guides!=='cross'){return orig(ctx,ppm,exp)}
+  const g=st.gap,cols=L.cols,rows=L.rows;if(!L.n)return;
+  const filled=(c,r)=>c>=0&&r>=0&&c<cols&&r<rows&&!!st.slots[r*cols+c];
+  // cut-line positions: outer card edges + centre of every gap
+  const V=[L.x0],H=[L.y0];
+  for(let c=1;c<cols;c++)V.push(L.x0+c*(L.cw+g)-g/2);
+  V.push(L.x0+cols*L.cw+(cols-1)*g);
+  for(let r=1;r<rows;r++)H.push(L.y0+r*(L.ch+g)-g/2);
+  H.push(L.y0+rows*L.ch+(rows-1)*g);
+  const lw=Math.max(1,ppm*0.12),o=lw/ppm/2;
+  ctx.save();ctx.strokeStyle='#444';ctx.lineWidth=lw;ctx.beginPath();
+  // + cut lines (vertical): only beside rows that hold a photo
+  for(let a=0;a<V.length;a++){
+   const x=V[a]+(a===0?-o:a===V.length-1?o:0);
+   for(let r=0;r<rows;r++){
+    if(!(filled(a-1,r)||filled(a,r)))continue;
+    ctx.moveTo(x*ppm,H[r]*ppm);ctx.lineTo(x*ppm,H[r+1]*ppm);
+   }
+  }
+  // + cut lines (horizontal): only beside columns that hold a photo
+  for(let b=0;b<H.length;b++){
+   const y=H[b]+(b===0?-o:b===H.length-1?o:0);
+   for(let c=0;c<cols;c++){
+    if(!(filled(c,b-1)||filled(c,b)))continue;
+    ctx.moveTo(V[c]*ppm,y*ppm);ctx.lineTo(V[c+1]*ppm,y*ppm);
+   }
+  }
+  // corner marks on every card that has a photo
+  const len=Math.min(3,Math.max(g,0.5));
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+   if(!filled(c,r))continue;
+   const x1=L.x0+c*(L.cw+g),x2=x1+L.cw,y1=L.y0+r*(L.ch+g),y2=y1+L.ch;
+   for(const cx of [x1,x2])for(const cy of [y1,y2]){
+    const dx=cx===x1?-1:1,dy=cy===y1?-1:1;
+    ctx.moveTo(cx*ppm,cy*ppm);ctx.lineTo((cx+dx*len)*ppm,cy*ppm);
+    ctx.moveTo(cx*ppm,cy*ppm);ctx.lineTo(cx*ppm,(cy+dy*len)*ppm);
+   }
+  }
+  ctx.stroke();ctx.restore();
+ };
+ const b=document.createElement('button');b.dataset.g='cross';b.textContent='+ Cut lines & corners (photos only)';b.style.gridColumn='1/-1';
+ b.onclick=()=>{st.guides='cross';render()};
+ $('seg').appendChild(b);syncSeg();
+})();
+</script>
+
+<script>
+// ===== Caption text + emoji in the white area (added) =====
+(()=>{
+const U=20; // layout units per mm (keeps preview and export identical)
+const cap={text:'',font:'hand',align:'center',v:'middle',size:5,pad:1.5,bold:false,italic:false,auto:true,color:'#2a2723'};
+const FONTS={
+ hand:'"Segoe Script","Bradley Hand","Chalkboard SE","Comic Sans MS",cursive',
+ sans:'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif',
+ serif:'Georgia,"Times New Roman",serif',
+ mono:'ui-monospace,Menlo,Consolas,monospace'};
+const EMOJI_FONTS=',"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji"';
+const fontStr=fs=>(cap.italic?'italic ':'')+(cap.bold?'700 ':'400 ')+(fs*U)+'px '+FONTS[cap.font]+EMOJI_FONTS;
+const mc=document.createElement('canvas').getContext('2d');
+
+function wrap(text,maxPx){
+ const out=[];
+ for(const para of text.split('\n')){
+  let line='';
+  const flush=()=>{out.push(line);line=''};
+  for(const word of para.split(' ')){
+   const t=line?line+' '+word:word;
+   if(mc.measureText(t).width<=maxPx){line=t;continue}
+   if(line)flush();
+   if(mc.measureText(word).width<=maxPx){line=word;continue}
+   for(const ch of Array.from(word)){          // break very long words by character (emoji-safe)
+    if(line&&mc.measureText(line+ch).width>maxPx)flush();
+    line+=ch;
+   }
+  }
+  out.push(line);
+ }
+ return out;
+}
+const cache=new Map();
+function layout(text,wA,hA){
+ const key=[text,cap.font,cap.bold,cap.italic,cap.size,wA,hA].join('|');
+ if(cache.has(key))return cache.get(key);
+ let res=null;
+ for(let fs=cap.size;fs>=0.8;fs-=0.25){
+  mc.font=fontStr(fs);const lines=wrap(text,wA*U);
+  if(lines.length*fs*1.2<=hA){res={fs,lines};break}
+ }
+ if(!res){mc.font=fontStr(0.8);res={fs:0.8,lines:wrap(text,wA*U)}}
+ if(cache.size>300)cache.clear();
+ cache.set(key,res);return res;
+}
+function area(){
+ const S=SIZES[st.size],p=cap.pad;
+ return {S,x:p,y:S.top+S.ih+p,w:S.w-2*p,h:S.h-S.top-S.ih-2*p,full:S.h-S.top-S.ih};
+}
+function autoColor(){
+ const h=(st.frame||'#fff').replace('#','');
+ const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);
+ return (0.299*r+0.587*g+0.114*b)/255<0.5?'#f2efe8':'#2a2723';
+}
+function drawCaption(ctx,slot,ppm,rot){
+ const text=(slot.cap!==undefined?slot.cap:cap.text);
+ if(!text||!text.trim())return;
+ const A=area();if(A.w<1||A.h<1)return;
+ const {fs,lines}=layout(text,A.w,A.h),lh=fs*1.2,total=lines.length*lh;
+ const y0=cap.v==='top'?A.y:cap.v==='bottom'?A.y+A.h-total:A.y+(A.h-total)/2;
+ const ax=cap.align==='left'?A.x:cap.align==='right'?A.x+A.w:A.x+A.w/2;
+ ctx.save();
+ if(rot){ctx.translate(A.S.h*ppm,0);ctx.rotate(Math.PI/2)}
+ ctx.scale(ppm/U,ppm/U);
+ ctx.beginPath();ctx.rect(A.x*U,A.y*U,A.w*U,A.h*U);ctx.clip();   // never leaves the white area
+ ctx.fillStyle=cap.auto?autoColor():cap.color;
+ ctx.font=fontStr(fs);ctx.textAlign=cap.align;ctx.textBaseline='middle';
+ lines.forEach((ln,i)=>ctx.fillText(ln,ax*U,(y0+(i+0.5)*lh)*U));
+ ctx.restore();
+}
+const origDraw=drawCard;
+drawCard=function(ctx,slot,ppm,rot,preview){
+ origDraw(ctx,slot,ppm,rot,preview);
+ if(slot)drawCaption(ctx,slot,ppm,rot);
+};
+
+// note under the controls
+function note(){
+ const A=area(),n=$('capNote');
+ n.textContent=A.full<3
+  ?'This size has almost no white area at the bottom (text hidden). Use ★ Custom and increase "White bottom".'
+  :'White area for text: '+(A.S.w-2*cap.pad).toFixed(1)+' × '+Math.max(0,A.full-2*cap.pad).toFixed(1)+' mm. Text shrinks automatically to stay inside it. Only photos get text.';
+}
+const origRender=render;
+render=function(){origRender();note()};
+
+// controls
+let pend=false;
+const ren=()=>{if(pend)return;pend=true;requestAnimationFrame(()=>{pend=false;render()})};
+const bind=(id,ev,fn)=>$(id).addEventListener(ev,()=>{fn($(id));ren()});
+bind('capText','input',e=>cap.text=e.value);
+bind('capFont','change',e=>cap.font=e.value);
+bind('capAlign','change',e=>cap.align=e.value);
+bind('capV','change',e=>cap.v=e.value);
+bind('capPad','input',e=>cap.pad=Math.max(0,Math.min(20,parseFloat(e.value)||0)));
+bind('capSize','input',e=>{cap.size=+e.value;$('capSizeV').textContent=e.value});
+bind('capBold','change',e=>cap.bold=e.checked);
+bind('capItalic','change',e=>cap.italic=e.checked);
+bind('capAuto','change',e=>cap.auto=e.checked);
+bind('capColor','input',e=>{cap.color=e.value;cap.auto=false;$('capAuto').checked=false});
+['❤️','✨','🌸','📸','😊','🥰','🎉','☀️','🌈','⭐','🎂','💕'].forEach(em=>{
+ const b=document.createElement('button');b.type='button';b.textContent=em;
+ b.onclick=()=>{
+  const t=$('capText'),a=t.selectionStart??t.value.length,z=t.selectionEnd??a;
+  t.value=t.value.slice(0,a)+em+t.value.slice(z);t.focus();t.selectionStart=t.selectionEnd=a+em.length;
+  cap.text=t.value;ren();
+ };
+ $('capEmo').appendChild(b);
+});
+
+// per-photo caption inside the crop dialog
+const lab=document.createElement('label');lab.style.width='100%';
+lab.innerHTML='Caption for this photo only <input class="capin" id="capOne" type="text" placeholder="Empty = use the text from the side panel (type a space for none)">';
+$('zoom').insertAdjacentElement('afterend',lab);
+let capBackup;
+const origOpen=openCrop;
+openCrop=function(i){origOpen(i);const s=st.slots[i];capBackup=s.cap;$('capOne').value=s.cap===undefined?'':s.cap};
+$('capOne').addEventListener('input',e=>{
+ const s=cr.slot;if(!s)return;
+ s.cap=e.target.value===''?undefined:e.target.value;
+ paintSlot(cr.i);
+});
+$('cancel').addEventListener('click',()=>{if(cr.slot&&st.slots[cr.i]===cr.slot){cr.slot.cap=capBackup;render()}});
+
+render();
+})();
 </script>
 </body>
 </html>
