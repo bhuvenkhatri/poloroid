@@ -66,6 +66,7 @@ button:disabled{opacity:.55;cursor:wait}
 .emo{display:flex;flex-wrap:wrap;gap:4px}.emo button{padding:3px 6px;font-size:17px;line-height:1.2}
 .capbox{display:flex;flex-direction:column;gap:8px}
 .capbox input[type=range]{width:100%}
+[hidden]{display:none!important}
 </style>
 </head>
 <body>
@@ -95,15 +96,23 @@ button:disabled{opacity:.55;cursor:wait}
   </div>
   <div class="row">
    <label>Page margin (mm) <input id="margin" type="number" min="0" max="30" step="0.5" value="3"></label>
-   <label>Gap (mm) <input id="gap" type="number" min="0" max="20" step="0.5" value="2"></label>
+   <label>Gap (mm) <input id="gap" type="number" min="0" max="20" step="0.5" value="0"></label>
   </div>
   <label>Export quality <select id="dpi"><option value="300">300 DPI (standard print)</option><option value="450">450 DPI</option><option value="600">600 DPI (max, big file)</option></select></label>
+  <label>PDF quality <select id="pdfq"><option value="lossless">Lossless — best, no compression loss (big file)</option><option value="jpeg">Max-quality JPEG (smaller file)</option></select></label>
   <div class="glabel">Cutting guides</div>
   <div class="seg" id="seg"><button data-g="off">Off</button><button data-g="outline">Card outline</button><button data-g="marks">Corner marks</button><button data-g="ticks">Page-edge ticks</button></div>
   <div class="capbox" id="capBox">
    <div class="glabel">Text &amp; emoji in the white area</div>
-   <textarea class="capin" id="capText" rows="2" placeholder="Write text or emoji… (shown on every photo)"></textarea>
-   <div class="emo" id="capEmo"></div>
+   <div class="seg" id="capMode"><button type="button" data-cm="same">Same on all photos</button><button type="button" data-cm="each">Different on each photo</button></div>
+   <div id="capSame" class="capbox">
+    <textarea class="capin" id="capText" rows="2" placeholder="Write text or emoji… (shown on every photo)"></textarea>
+    <div class="emo" id="capEmo"></div>
+   </div>
+   <div id="capEach" class="capbox" hidden>
+    <div class="note" style="color:var(--ink)">Tap a photo on the sheet, then type its own text and pick its own emoji in the popup. Photos you leave empty get no text.</div>
+    <button type="button" id="capClear">Clear text from all photos</button>
+   </div>
    <div class="row">
     <label>Font <select id="capFont"><option value="hand">Handwriting</option><option value="sans">Clean sans</option><option value="serif">Serif</option><option value="mono">Typewriter</option></select></label>
     <label>Align <select id="capAlign"><option value="center">Center</option><option value="left">Left</option><option value="right">Right</option></select></label>
@@ -164,7 +173,7 @@ const SIZES=[
  {n:'6×4 inch photo, no border (152×102)',w:152.4,h:101.6,iw:152.4,ih:101.6,side:0,top:0}
 ];
 const A4={w:210,h:297};
-const st={size:0,orient:'auto',margin:3,gap:2,dpi:300,frame:'#ffffff',guides:'outline',slots:[]};
+const st={size:0,orient:'auto',margin:3,gap:0,dpi:300,frame:'#ffffff',guides:'outline',slots:[]};
 const $=id=>document.getElementById(id);
 let L=null, pickIndex=-1;
 
@@ -205,8 +214,7 @@ function drawCard(ctx,slot,ppm,rot,preview){
  const ix=S.side*ppm,iy=S.top*ppm,iw=S.iw*ppm,ih=S.ih*ppm;
  if(slot){
   const r=cropRect(slot,S.iw/S.ih);
-  ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
-  ctx.drawImage(slot.img,r.sx,r.sy,r.sw,r.sh,ix,iy,iw,ih);
+  drawPhoto(ctx,slot.img,r,ix,iy,iw,ih,preview);
  }else if(preview){
   const dark=matchMedia('(prefers-color-scheme:dark)').matches&&document.documentElement.dataset.theme!=='light';
   ctx.fillStyle=dark?'#34312c':'#ebe7df';ctx.fillRect(ix,iy,iw,ih);
@@ -215,6 +223,23 @@ function drawCard(ctx,slot,ppm,rot,preview){
  }
  if(st.guides==='outline'){ctx.strokeStyle='#bdb7ab';ctx.lineWidth=Math.max(1,ppm*0.15);ctx.strokeRect(ctx.lineWidth/2,ctx.lineWidth/2,S.w*ppm-ctx.lineWidth,S.h*ppm-ctx.lineWidth)}
  ctx.restore();
+}
+
+// Draws the cropped region straight from the ORIGINAL pixels. For export, big photos are
+// shrunk in several gentle halvings (much sharper than one huge jump, no aliasing/moire).
+function drawPhoto(ctx,img,r,ix,iy,iw,ih,preview){
+ ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+ if(preview){ctx.drawImage(img,r.sx,r.sy,r.sw,r.sh,ix,iy,iw,ih);return}
+ let src=img,sx=r.sx,sy=r.sy,sw=r.sw,sh=r.sh;
+ const tw=Math.max(1,Math.round(iw)),th=Math.max(1,Math.round(ih));
+ while(sw>tw*2&&sh>th*2){
+  const nw=Math.max(tw,Math.round(sw/2)),nh=Math.max(th,Math.round(sh/2));
+  const c=document.createElement('canvas');c.width=nw;c.height=nh;
+  const x=c.getContext('2d');x.imageSmoothingEnabled=true;x.imageSmoothingQuality='high';
+  x.drawImage(src,sx,sy,sw,sh,0,0,nw,nh);
+  src=c;sx=0;sy=0;sw=nw;sh=nh;
+ }
+ ctx.drawImage(src,sx,sy,sw,sh,ix,iy,iw,ih);
 }
 
 // corner marks / page-edge ticks, drawn at page level (outside the photos)
@@ -374,7 +399,7 @@ function renderPage(dpi){
 }
 const toBlob=(c,type,q)=>new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('Image too large for this device — try 300 DPI')),type,q));
 
-function makePdf(jpeg,w,h){
+function makePdf(jpeg,w,h,filter){
  const enc=new TextEncoder(),parts=[],offs=[];let len=0;
  const push=d=>{const b=typeof d==='string'?enc.encode(d):d;parts.push(b);len+=b.length};
  const obj=(n,body)=>{offs[n]=len;push(n+' 0 obj\n'+body+'\nendobj\n')};
@@ -385,7 +410,7 @@ function makePdf(jpeg,w,h){
  const cs='q 595.276 0 0 841.89 0 0 cm /Im0 Do Q';
  obj(4,'<< /Length '+cs.length+' >>\nstream\n'+cs+'\nendstream');
  offs[5]=len;
- push('5 0 obj\n<< /Type /XObject /Subtype /Image /Width '+w+' /Height '+h+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+jpeg.length+' >>\nstream\n');
+ push('5 0 obj\n<< /Type /XObject /Subtype /Image /Width '+w+' /Height '+h+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /'+(filter||'DCTDecode')+' /Length '+jpeg.length+' >>\nstream\n');
  push(jpeg);push('\nendstream\nendobj\n');
  const xref=len;let x='xref\n0 6\n0000000000 65535 f \n';
  for(let i=1;i<=5;i++)x+=String(offs[i]).padStart(10,'0')+' 00000 n \n';
@@ -620,7 +645,7 @@ sync();syncUI();refit();drawEd();fillFields();
 // ===== Caption text + emoji in the white area (added) =====
 (()=>{
 const U=20; // layout units per mm (keeps preview and export identical)
-const cap={text:'',font:'hand',align:'center',v:'middle',size:5,pad:1.5,bold:false,italic:false,auto:true,color:'#2a2723'};
+const cap={mode:'same',text:'',font:'hand',align:'center',v:'middle',size:5,pad:1.5,bold:false,italic:false,auto:true,color:'#2a2723'};
 const FONTS={
  hand:'"Segoe Script","Bradley Hand","Chalkboard SE","Comic Sans MS",cursive',
  sans:'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif',
@@ -672,7 +697,7 @@ function autoColor(){
  return (0.299*r+0.587*g+0.114*b)/255<0.5?'#f2efe8':'#2a2723';
 }
 function drawCaption(ctx,slot,ppm,rot){
- const text=(slot.cap!==undefined?slot.cap:cap.text);
+ const text=cap.mode==='same'?cap.text:(slot.cap||'');
  if(!text||!text.trim())return;
  const A=area();if(A.w<1||A.h<1)return;
  const {fs,lines}=layout(text,A.w,A.h),lh=fs*1.2,total=lines.length*lh;
@@ -717,31 +742,99 @@ bind('capBold','change',e=>cap.bold=e.checked);
 bind('capItalic','change',e=>cap.italic=e.checked);
 bind('capAuto','change',e=>cap.auto=e.checked);
 bind('capColor','input',e=>{cap.color=e.value;cap.auto=false;$('capAuto').checked=false});
-['❤️','✨','🌸','📸','😊','🥰','🎉','☀️','🌈','⭐','🎂','💕'].forEach(em=>{
- const b=document.createElement('button');b.type='button';b.textContent=em;
- b.onclick=()=>{
-  const t=$('capText'),a=t.selectionStart??t.value.length,z=t.selectionEnd??a;
-  t.value=t.value.slice(0,a)+em+t.value.slice(z);t.focus();t.selectionStart=t.selectionEnd=a+em.length;
-  cap.text=t.value;ren();
- };
- $('capEmo').appendChild(b);
-});
+const EMOJIS=['❤️','✨','🌸','📸','😊','🥰','🎉','☀️','🌈','⭐','🎂','💕'];
+function emojiBar(box,target){
+ EMOJIS.forEach(em=>{
+  const b=document.createElement('button');b.type='button';b.textContent=em;
+  b.onclick=()=>{
+   const a=target.selectionStart??target.value.length,z=target.selectionEnd??a;
+   target.value=target.value.slice(0,a)+em+target.value.slice(z);target.focus();
+   target.selectionStart=target.selectionEnd=a+em.length;
+   target.dispatchEvent(new Event('input'));
+  };
+  box.appendChild(b);
+ });
+}
+emojiBar($('capEmo'),$('capText'));
+
+// same / different mode switch
+function syncMode(){
+ document.querySelectorAll('#capMode button').forEach(b=>b.classList.toggle('on',b.dataset.cm===cap.mode));
+ $('capSame').hidden=cap.mode!=='same';
+ $('capEach').hidden=cap.mode!=='each';
+ const w=$('capOneWrap');if(w)w.hidden=cap.mode!=='each';
+}
+document.querySelectorAll('#capMode button').forEach(b=>b.onclick=()=>{cap.mode=b.dataset.cm;syncMode();ren()});
+$('capClear').onclick=()=>{
+ if(!st.slots.some(s=>s&&s.cap))return toast('No photo has its own text yet.');
+ if(!confirm('Remove the text from all photos?'))return;
+ st.slots.forEach(s=>{if(s)s.cap=undefined});ren();
+};
+syncMode();
 
 // per-photo caption inside the crop dialog
-const lab=document.createElement('label');lab.style.width='100%';
-lab.innerHTML='Caption for this photo only <input class="capin" id="capOne" type="text" placeholder="Empty = use the text from the side panel (type a space for none)">';
+const lab=document.createElement('div');lab.id='capOneWrap';lab.style.cssText='width:100%;display:flex;flex-direction:column;gap:6px';
+lab.innerHTML='<label>Text &amp; emoji for this photo <textarea class="capin" id="capOne" rows="2" placeholder="Write something just for this photo…"></textarea></label><div class="emo" id="capOneEmo"></div>';
 $('zoom').insertAdjacentElement('afterend',lab);
+emojiBar($('capOneEmo'),$('capOne'));syncMode();
 let capBackup;
 const origOpen=openCrop;
-openCrop=function(i){origOpen(i);const s=st.slots[i];capBackup=s.cap;$('capOne').value=s.cap===undefined?'':s.cap};
+openCrop=function(i){origOpen(i);const s=st.slots[i];capBackup=s.cap;$('capOne').value=s.cap||'';syncMode()};
 $('capOne').addEventListener('input',e=>{
  const s=cr.slot;if(!s)return;
  s.cap=e.target.value===''?undefined:e.target.value;
  paintSlot(cr.i);
 });
+// keep each photo's own text when the photo itself is swapped
+const oldFile=$('file').onchange;
+$('file').onchange=async e=>{
+ const keep=pickIndex>=0&&st.slots[pickIndex]?st.slots[pickIndex].cap:undefined;
+ await oldFile(e);
+ if(keep!==undefined&&pickIndex>=0&&st.slots[pickIndex]){st.slots[pickIndex].cap=keep;render()}
+};
 $('cancel').addEventListener('click',()=>{if(cr.slot&&st.slots[cr.i]===cr.slot){cr.slot.cap=capBackup;render()}});
 
 render();
+})();
+</script>
+<script>
+// ===== Best-quality export (added): lossless PDF + PNG with print size embedded =====
+(()=>{
+const crcT=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+const crc32=b=>{let c=0xFFFFFFFF;for(let i=0;i<b.length;i++)c=crcT[(c^b[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0};
+async function pngWithDpi(blob,dpi){
+ const buf=new Uint8Array(await blob.arrayBuffer());
+ const ppm=Math.round(dpi/0.0254),ch=new Uint8Array(21),dv=new DataView(ch.buffer);
+ dv.setUint32(0,9);ch.set([0x70,0x48,0x59,0x73],4);dv.setUint32(8,ppm);dv.setUint32(12,ppm);ch[16]=1;
+ dv.setUint32(17,crc32(ch.subarray(4,17)));
+ return new Blob([buf.subarray(0,33),ch,buf.subarray(33)],{type:'image/png'});
+}
+async function deflateCanvas(c){
+ const W=c.width,H=c.height,ctx=c.getContext('2d');
+ const cs=new CompressionStream('deflate'),w=cs.writable.getWriter(),chunks=[];
+ const reader=(async()=>{const r=cs.readable.getReader();for(;;){const {done,value}=await r.read();if(done)break;chunks.push(value)}})();
+ for(let y=0;y<H;y+=128){
+  const h=Math.min(128,H-y),d=ctx.getImageData(0,y,W,h).data,o=new Uint8Array(W*h*3);
+  for(let i=0,j=0;i<d.length;i+=4,j+=3){o[j]=d[i];o[j+1]=d[i+1];o[j+2]=d[i+2]}
+  await w.write(o);
+ }
+ await w.close();await reader;
+ let n=0;chunks.forEach(k=>n+=k.length);const out=new Uint8Array(n);let p=0;chunks.forEach(k=>{out.set(k,p);p+=k.length});
+ return out;
+}
+$('png').onclick=guard($('png'),async()=>{
+ const c=renderPage(st.dpi);let b=await toBlob(c,'image/png');
+ try{b=await pngWithDpi(b,st.dpi)}catch(e){}
+ await save('polaroid-A4-'+st.dpi+'dpi.png',b);
+});
+$('pdf').onclick=guard($('pdf'),async()=>{
+ const c=renderPage(st.dpi);let done=false;
+ if($('pdfq').value==='lossless'&&typeof CompressionStream!=='undefined'){
+  try{const z=await deflateCanvas(c);await save('polaroid-A4.pdf',makePdf(z,c.width,c.height,'FlateDecode'));done=true}
+  catch(e){toast('Lossless PDF failed on this device, using max-quality JPEG instead.')}
+ }
+ if(!done){const jb=await toBlob(c,'image/jpeg',1);await save('polaroid-A4.pdf',makePdf(new Uint8Array(await jb.arrayBuffer()),c.width,c.height))}
+});
 })();
 </script>
 </body>
